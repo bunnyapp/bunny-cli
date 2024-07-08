@@ -1,0 +1,23 @@
+{
+  "name": "bunny-cli",
+  "version": "1.0.0",
+  "description": "Tool for managing and configuring Bunny instances",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "main": "bin/index.js",
+  "bin": {
+    "bunny": "./bin/index.js"
+  },
+  "type": "module",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@bunnyapp/api-client": "^2.2.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "conf": "^13.0.1",
+    "figlet": "^1.7.0",
+    "inquirer": "^10.0.0"
+  }
+}

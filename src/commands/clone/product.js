@@ -1,13 +1,16 @@
 import { Command } from "commander";
 import inquirer from "inquirer";
 import { input, select, confirm } from "@inquirer/prompts";
+import ora from "ora";
 import chalk from "chalk";
 import client from "../../lib/client.js";
 import productsQuery from "../../lib/queries/products.js";
 import productCreate from "../../lib/mutations/product-create.js";
 
-const products = new Command("products")
-  .description("Clone products from one Bunny instance to another")
+const product = new Command("product")
+  .description(
+    "Clone a product and all of its plans and price lists from one instance to another"
+  )
   .action(async () => {
     const sourceSubdomain = await input({
       message: "Enter a subdomain for the source Bunny instance",
@@ -51,19 +54,20 @@ const products = new Command("products")
     if (!confirmed) {
       console.log(chalk.red("Ok, not cloning the product"));
       return;
-    } else {
-      console.log(chalk.green("Cloning started..."));
-
-      const clonedProduct = await productCreate(
-        destinationClient,
-        targetProduct
-      );
-
-      console.log("Cloned product", clonedProduct);
     }
+
+    let spinner = ora(`Cloning product`).start();
+    const clonedProduct = await productCreate(destinationClient, targetProduct);
+    clonedProduct != null ? spinner.succeed() : spinner.fail();
+
+    spinner = ora(`Cloning product features`).start();
+    // const clonedProduct = await productCreate(destinationClient, targetProduct);
+    spinner.succeed();
+
+    console.log("Cloned product", clonedProduct);
   });
 
-export default products;
+export default product;
 
 // const bunny = new BunnyClient({
 //   baseUrl: "https://bunny.bunny.internal",

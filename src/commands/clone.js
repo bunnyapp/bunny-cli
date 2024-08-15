@@ -1,10 +1,10 @@
 import { Command } from "commander";
-import products from "./clone/products.js";
+import product from "./clone/product.js";
 
 const clone = new Command("clone").description(
   "Clone items between Bunny instances"
 );
 
-clone.addCommand(products);
+clone.addCommand(product);
 
 export default clone;

@@ -32,7 +32,10 @@ const importProducts = new Command("products")
       process.exit(1);
     }
 
-    const destinationClient = client("https://bunny.bunny.internal", "xxx");
+    const destinationClient = client(
+      "https://bunny.bunny.internal",
+      "eyJraWQiOiJ6Yzhvc1N1VDJCRGxjbXBISWxlamxJZHBoa24xMW50RlN6MEtGTGc1R3JnIiwiYWxnIjoiSFM1MTIifQ.eyJpc3MiOiJJbXBvcnQgQ2xpZW50IiwiaWF0IjoxNzIzODMzMzAzLCJqdGkiOiIwYzA0MjY2ZC04YTQ5LTQ3ODQtOGRlYS0yNGQ2NmJhMmMyMDMiLCJjbGllbnRfaWQiOiJ6Yzhvc1N1VDJCRGxjbXBISWxlamxJZHBoa24xMW50RlN6MEtGTGc1R3JnIiwiYXVkIjoiaHR0cHM6Ly9idW5ueS5pbnRlcm5hbCIsImV4cCI6MTczMTAzMzMwMywic2NvcGUiOiJzZWN1cml0eTpyZWFkIHNlY3VyaXR5OndyaXRlIGFkbWluOnJlYWQgYWRtaW46d3JpdGUgb3duZXI6cmVhZCBvd25lcjp3cml0ZSBzdGFuZGFyZDpyZWFkIHN0YW5kYXJkOndyaXRlIHF1b3Rpbmc6cmVhZCBxdW90aW5nOndyaXRlIHByb2R1Y3Q6cmVhZCBwcm9kdWN0OndyaXRlIHdvcmtmbG93OnJlYWQgd29ya2Zsb3c6d3JpdGUgZGV2ZWxvcGVyOnJlYWQgZGV2ZWxvcGVyOndyaXRlIG9wZW5pZCBiaWxsaW5nOnJlYWQgYmlsbGluZzp3cml0ZSBhbmFseXRpY3M6cmVhZCBhbmFseXRpY3M6d3JpdGUgbGVnZW5kYXJ5OnJlYWQgbGVnZW5kYXJ5OndyaXRlIHBsYXRmb3JtOnJlYWQgcGxhdGZvcm06d3JpdGUgcG9ydGFsOndyaXRlIHBvcnRhbDpyZWFkIiwic3ViIjoiYzYxMGQ5MWEtZDBkNS00NDEyLWJlMTYtZDM1ZDI2NWY5NGFkIiwic3ViX3R5cGUiOiJVc2VyIiwiYWN0b3JfZGlzcGxheV9hcyI6eyJpZCI6MSwidHlwZSI6IkFwaUNsaWVudCJ9fQ.BMAAbvKd5knBzPIBOYfRpMIPK07vFH9QEGZe2v9SSNJvJul0XRfhqat88Mv5PaVLs8gP760ntlc2rYe-ymonCQ"
+    );
 
     const confirmed = await confirm({
       message: "Are you sure you want to do this?",

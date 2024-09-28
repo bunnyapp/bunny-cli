@@ -47,14 +47,23 @@ const subscriptionCreate = async (client, attributes) => {
     }
 
     if (subscriptionCreate?.errors) {
-      throw new Error(subscriptionCreate.errors.join());
+      if (Array.isArray(subscriptionCreate.errors)) {
+        throw new Error(subscriptionCreate.errors.join());
+      } else {
+        throw new Error(subscriptionCreate.errors);
+      }
     }
 
     return subscriptionCreate?.subscription;
   } catch (error) {
     console.log(chalk.red("Subscription Create Error"));
-    console.log(chalk.red(error.message));
-    console.log(chalk.red(error));
+    if (error.status && error.status == 500) {
+      console.log(chalk.red("Internal Server Error", error.exception));
+    }
+    if (error) {
+      console.log(chalk.red(error));
+      console.log(chalk.red(error.message));
+    }
     console.log(JSON.stringify(attributes, null, 2));
     console.log(
       chalk.red(

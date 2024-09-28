@@ -5,8 +5,9 @@ import chalk from "chalk";
 import figlet from "figlet";
 import Conf from "conf";
 
-import clone from "../src/commands/clone.js";
 import importer from "../src/commands/import.js";
+import configure from "../src/commands/configure.js";
+import profiles from "../src/commands/profiles.js";
 
 const program = new Command();
 
@@ -16,8 +17,9 @@ program
   .version("1.0.0")
   .option("--unsafe", "Ignores SSL certificate errors");
 
-program.addCommand(clone);
 program.addCommand(importer);
+program.addCommand(configure);
+program.addCommand(profiles);
 
 if (process.argv.length <= 2) {
   const info = chalk.hex("#FF5833");

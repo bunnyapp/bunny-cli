@@ -18,7 +18,11 @@ const productImport = async (client, attributes) => {
     }
 
     if (productImport?.errors) {
-      throw new Error(productImport.errors.join());
+      if (Array.isArray(productImport.errors)) {
+        throw new Error(productImport.errors.join());
+      } else {
+        throw new Error(productImport.errors);
+      }
     }
 
     if (productImport?.response.status === "failed") {
@@ -27,7 +31,13 @@ const productImport = async (client, attributes) => {
 
     return productImport.response;
   } catch (error) {
-    console.log(chalk.red(error));
+    console.log(chalk.red("Product Import Error"));
+    if (error.status && error.status == 500) {
+      console.log(chalk.red("Internal Server Error", error.exception));
+    }
+    if (error) {
+      console.log(chalk.red(error));
+    }
   }
 };
 

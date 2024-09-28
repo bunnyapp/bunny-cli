@@ -1,15 +1,12 @@
 import BunnyClient from "@bunnyapp/api-client";
 
-const client = function (subdomain, accessToken) {
-  let baseUrl = `https://${subdomain}.bunny.com`;
-
-  if (subdomain.startsWith("https")) {
-    baseUrl = subdomain;
-  }
-
+const client = function (baseUrl, clientId, clientSecret) {
   return new BunnyClient({
     baseUrl: baseUrl,
-    accessToken: accessToken,
+    clientId: clientId,
+    clientSecret: clientSecret,
+    scope:
+      "standard:read standard:write admin:read admin:write product:read product:write",
   });
 };
 

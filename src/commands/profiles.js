@@ -1,10 +1,11 @@
 import { Command } from "commander";
 import Conf from "conf";
 import chalk from "chalk";
+import inspectProfile from "./profiles/inspect.js";
 
 const config = new Conf({ projectName: "bunny-cli" });
 
-const listProfiles = new Command("profiles")
+const listProfiles = new Command("list")
   .description("List all configuration profiles by name")
   .action(() => {
     const profiles = config.get("profiles");
@@ -19,4 +20,9 @@ const listProfiles = new Command("profiles")
     });
   });
 
-export default listProfiles;
+const profiles = new Command("profiles")
+  .description("Manage Bunny CLI profiles")
+  .addCommand(listProfiles)
+  .addCommand(inspectProfile);
+
+export default profiles;

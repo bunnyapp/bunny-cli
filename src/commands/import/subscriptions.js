@@ -32,6 +32,16 @@ const countRows = async (filePath) => {
   });
 };
 
+function parseDateSafely(dateString) {
+  if (!dateString) return null;
+  try {
+    return parseISO(dateString);
+  } catch {
+    // If parsing fails, try adding time component
+    return parseISO(dateString + "T00:00:00");
+  }
+}
+
 async function getTierStartValue(row, chargeIndex, tierIndex) {
   const columnName = `Charge ${chargeIndex} Tier ${tierIndex} Quantity From`;
 
@@ -55,9 +65,15 @@ async function getTierStartValue(row, chargeIndex, tierIndex) {
 }
 
 async function processRow(row, accountMap, client) {
-  let startDate = parseISO(row["Start Date"]);
-  let endDate = parseISO(row["End Date"]);
+  let startDate = parseDateSafely(row["Start Date"]);
+  let endDate = parseDateSafely(row["End Date"]);
   let invalidSubscriptionAttributes = false;
+
+  if (!startDate || !endDate) {
+    invalidSubscriptionAttributes = true;
+    console.log(chalk.red("Invalid start or end date format"));
+    return null;
+  }
 
   let variables = {
     attributes: {
@@ -81,13 +97,16 @@ async function processRow(row, accountMap, client) {
   }
 
   if (row["Trial Start Date"]) {
-    // Only create a trial if the start date is in the future
     if (startDate > new Date()) {
-      variables.attributes.trial = true;
-      variables.attributes.trialStartDate = format(
-        parseISO(row["Trial Start Date"]),
-        "yyyy-MM-dd"
-      );
+      let trialStartDate = parseDateSafely(row["Trial Start Date"]);
+      if (trialStartDate) {
+        // Set trial flag and start date
+        variables.attributes.trial = true;
+        variables.attributes.trialStartDate = format(
+          trialStartDate,
+          "yyyy-MM-dd"
+        );
+      }
     }
   }
 
@@ -109,9 +128,18 @@ async function processRow(row, accountMap, client) {
         lastName: row["Billing Contact Last Name"],
         email: row["Billing Contact Email"].trim(),
       },
-      emailsEnabled: row["Emails Enabled"].toLowerCase() === "true",
       netPaymentDays: parseInt(row["Net Payment Days"]),
     };
+
+    if (row["Emails Enabled"]) {
+      variables.attributes.account.emailsEnabled =
+        row["Emails Enabled"].toLowerCase() === "true";
+    }
+
+    if (row["Draft Invoices Enabled"]) {
+      variables.attributes.account.draftInvoices =
+        row["Draft Invoices Enabled"].toLowerCase() === "true";
+    }
   }
 
   // Add discounts
@@ -136,14 +164,16 @@ async function processRow(row, accountMap, client) {
     }
 
     if (row[`Discount ${discountIndex} Start Date`]) {
-      let discountStartDate = parseISO(
+      let discountStartDate = parseDateSafely(
         row[`Discount ${discountIndex} Start Date`]
       );
       discount.startDate = format(discountStartDate, "yyyy-MM-dd");
     }
 
     if (row[`Discount ${discountIndex} End Date`]) {
-      let discountEndDate = parseISO(row[`Discount ${discountIndex} End Date`]);
+      let discountEndDate = parseDateSafely(
+        row[`Discount ${discountIndex} End Date`]
+      );
       discount.endDate = format(discountEndDate, "yyyy-MM-dd");
     }
 
@@ -167,17 +197,8 @@ async function processRow(row, accountMap, client) {
   do {
     if (!row[`Charge ${chargeIndex} Code`]) break;
 
-    let amount = parseFloat(
-      row[`Charge ${chargeIndex} Amount`].replace(",", "")
-    );
-
-    if (amount < 0) {
-      invalidSubscriptionAttributes = true;
-      console.log(chalk.red("Negative charge detected"));
-    }
-
     let charge = {
-      code: row[`Charge ${chargeIndex} Code`],
+      code: row[`Charge ${chargeIndex} Code`]?.toLowerCase() || "",
     };
 
     // Check how many times the code is in the chargeCodes array
@@ -189,21 +210,31 @@ async function processRow(row, accountMap, client) {
       // If the same charge code is used multiple times then we need to
       // include the charge start and end dates
       charge.startDate = format(
-        parseISO(row[`Charge ${chargeIndex} Effective Start Date`]),
+        parseDateSafely(row[`Charge ${chargeIndex} Effective Start Date`]),
         "yyyy-MM-dd"
       );
       charge.endDate = format(
-        parseISO(row[`Charge ${chargeIndex} Effective End Date`]),
+        parseDateSafely(row[`Charge ${chargeIndex} Effective End Date`]),
         "yyyy-MM-dd"
       );
     }
 
-    if (row[`Charge ${chargeIndex} Type`].toLowerCase() != "usage") {
-      let quantity = parseInt(
-        row[`Charge ${chargeIndex} Quantity`].replace(",", "")
-      );
+    let quantityColumn = `Charge ${chargeIndex} Quantity`;
+    if (row.hasOwnProperty(quantityColumn) && row[quantityColumn]) {
+      let quantity = parseInt(row[quantityColumn].replace(",", ""));
 
-      charge.quantity = quantity > 0 ? quantity : 1;
+      if (
+        row[`Charge ${chargeIndex} Type`] &&
+        row[`Charge ${chargeIndex} Type`].toLowerCase() == "usage"
+      ) {
+        console.log(
+          chalk.red(
+            `Usage quantity cant be set here. Ignoring. Quantity: ${quantity} for ${row["Account Name"]} ${charge.code}`
+          )
+        );
+      } else {
+        charge.quantity = quantity > 0 ? quantity : 1;
+      }
     }
 
     // Add price custom price tiers
@@ -240,21 +271,23 @@ async function processRow(row, accountMap, client) {
         tierIndex++;
       } while (true);
     } else {
-      charge.price = amount;
+      let amountColumn = `Charge ${chargeIndex} Amount`;
+      if (row.hasOwnProperty(amountColumn) && row[amountColumn]) {
+        let amount = parseFloat(row[amountColumn].replace(",", ""));
+        if (amount >= 0) {
+          charge.price = amount;
+        } else {
+          invalidSubscriptionAttributes = true;
+          console.log(chalk.red("Negative charge detected"));
+        }
+      }
     }
 
     if (
       !charge.code.startsWith("NOT_FOUND") &&
       charge.code != "DISCOUNT_REQUIRED"
     ) {
-      // Dont include duplicate charges
-      // let existingCharge = variables.attributes.priceListCharges.find(
-      //   (c) => c.code === charge.code
-      // );
-
-      // if (!existingCharge) {
       variables.attributes.priceListCharges.push(charge);
-      // }
     }
 
     chargeIndex++;
@@ -262,18 +295,11 @@ async function processRow(row, accountMap, client) {
 
   if (invalidSubscriptionAttributes) {
     // Bailing out on this subscription
-    // console.log(
-    //   chalk.red(
-    //     `Invalid subscription attributes. Not importing subscription for ${row["Account Name"]} with price list ${row["Price List Code"]}`
-    //   )
-    // );
     return null;
   }
 
-  // if (variables.attributes.account.name.startsWith("Phone")) {
-  // console.log(JSON.stringify(variables, null, 2));
-  //   process.exit();
-  // }
+  // Log the variables for debugging
+  console.log(JSON.stringify(variables, null, 2));
 
   return await subscriptionCreate(client, variables);
 }
@@ -306,9 +332,6 @@ async function processRows(client, filePath, rowCount) {
         path: outputFilePath,
         header: headers.map((header) => ({ id: header, title: header })),
       });
-
-      // Write the header row to the output CSV
-      // await csvWriter.writeRecords([]);
     }
 
     let subscription = await processRow(row, accountMap, client);

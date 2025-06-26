@@ -13,12 +13,21 @@ const importProducts = new Command("products")
   .description("Import products in bulk from a json file")
   .option("-f, --file <path>", "Import file path")
   .option("-p, --profile <name>", "Profile name", "default")
+  .option("-v, --verbose", "Show verbose output")
   .action(async (options) => {
     let products;
     if (options.file) {
       try {
         const content = await fs.readFile(options.file, "utf8");
         products = JSON.parse(content);
+        if (options.verbose) {
+          console.log(chalk.blue("\nImporting the following:"));
+          console.log(chalk.gray("Profile:", options.profile));
+          console.log(chalk.gray("File path:", options.file));
+          console.log(
+            chalk.gray("Products to import:", products.products?.length || 0)
+          );
+        }
       } catch (error) {
         console.error(chalk.red("Error reading file:", error.message));
         process.exit(1);
@@ -56,8 +65,40 @@ const importProducts = new Command("products")
     }
 
     let spinner = ora(`Importing products `).start();
-    const importResults = await productImport(destinationClient, products);
-    importResults?.status == "success" ? spinner.succeed() : spinner.fail();
+    try {
+      if (options.verbose) {
+        console.log(chalk.blue("\nSending to API:"));
+        console.log(chalk.gray(JSON.stringify(products, null, 2)));
+      }
+
+      const importResults = await productImport(destinationClient, products);
+
+      if (importResults?.status === "success") {
+        spinner.succeed("Products imported successfully");
+      } else {
+        spinner.fail("Failed to import products");
+        throw new Error(importResults?.message);
+      }
+    } catch (error) {
+      spinner.fail("Failed to import products");
+      const errorMessage = error?.message || "Unknown error occurred";
+      console.error(chalk.red("\nImport error:"));
+      console.error(chalk.red(errorMessage));
+
+      if (options.verbose) {
+        console.log(chalk.yellow("\nDebug information:"));
+        console.log(chalk.gray("Profile:", options.profile));
+        console.log(chalk.gray("File:", options.file));
+        console.log(chalk.gray("\nImport data:"));
+        console.log(chalk.gray(JSON.stringify(products, null, 2)));
+        if (error.stack) {
+          console.log(chalk.gray("\nStack trace:"));
+          console.log(chalk.gray(error.stack));
+        }
+      }
+
+      process.exit(1);
+    }
   });
 
 export default importProducts;

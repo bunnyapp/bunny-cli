@@ -6,6 +6,7 @@ import figlet from "figlet";
 import Conf from "conf";
 
 import importer from "../src/commands/import.js";
+import migrate from "../src/commands/migrate.js";
 import configure from "../src/commands/configure.js";
 import profiles from "../src/commands/profiles.js";
 
@@ -18,6 +19,7 @@ program
   .option("--unsafe", "Ignores SSL certificate errors");
 
 program.addCommand(importer);
+program.addCommand(migrate);
 program.addCommand(configure);
 program.addCommand(profiles);
 

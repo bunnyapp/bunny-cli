@@ -66,6 +66,58 @@ To import MRR from a CSV file:
 bunny import mrr --file=mrr.csv
 ```
 
+## Migration
+
+### Migrate Products from Stripe
+
+To migrate products from Stripe to Bunny:
+
+```bash
+bunny migrate stripe products
+```
+
+This command will:
+
+- Prompt you for your Stripe secret key (or use a saved one)
+- Fetch all products, prices, features, and meters from Stripe
+- Transform the data to Bunny format
+- Import the products into your configured Bunny instance
+
+You can use the `--profile` option to specify a different profile:
+
+```bash
+bunny migrate stripe products --profile=alternate
+```
+
+Use the `--verbose` flag for detailed output:
+
+```bash
+bunny migrate stripe products --verbose
+```
+
+### Migrate Products from Another Bunny Instance
+
+To migrate a product from one Bunny instance to another:
+
+```bash
+bunny migrate bunny
+```
+
+This command will:
+
+- Prompt you for source instance credentials (subdomain/URL, client ID, client secret)
+- List all available products from the source instance
+- Let you select which product to migrate
+- Prompt you for destination instance credentials
+- Fetch and transform the product data
+- Import the product to the destination instance
+
+Use the `--verbose` flag for detailed output:
+
+```bash
+bunny migrate bunny --verbose
+```
+
 ### Using Different Profiles
 
 You can specify a different profile using the `--profile` option:

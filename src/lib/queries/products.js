@@ -29,9 +29,14 @@ const query = `query products ($after: String, $before: String, $first: Int, $la
 const productsQuery = async (client) => {
   try {
     const response = await client.query(query, {});
+
+    if (!response?.data?.products?.edges) {
+      throw new Error("Invalid response structure from products query");
+    }
     return response.data.products.edges.map((edge) => edge.node);
   } catch (error) {
     console.log(chalk.red("Error fetching products.", error));
+    throw error;
   }
 };
 

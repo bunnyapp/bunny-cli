@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { promises as fs } from "fs";
-import { confirm, input } from "@inquirer/prompts";
+import { confirm, input, select } from "@inquirer/prompts";
 import ora from "ora";
 import chalk from "chalk";
 import Conf from "conf";
@@ -9,6 +9,8 @@ import path from "path";
 import os from "os";
 import client from "../../../lib/client.js";
 import subscriptionCreate from "../../../lib/mutations/subscription-create.js";
+import paymentMethodCreate from "../../../lib/mutations/payment-method-create.js";
+import pluginsQuery from "../../../lib/queries/plugins.js";
 
 const config = new Conf({ projectName: "bunny-cli" });
 
@@ -31,7 +33,7 @@ async function fetchAllSubscriptions(stripe) {
             product,
           },
         };
-      })
+      }),
     );
 
     subscriptions.push({
@@ -47,6 +49,7 @@ async function fetchAllSubscriptions(stripe) {
       trial_end: subscription.trial_end,
       discounts: subscription.discounts,
       schedule: subscription.schedule,
+      default_payment_method: subscription.default_payment_method,
     });
   }
   return subscriptions;
@@ -91,8 +94,8 @@ function transformToImportFormat(stripeData, options = {}) {
       trial = true;
       console.warn(
         chalk.yellow(
-          `Warning: Skipping subscription ${subscription.id} because it has an active trial`
-        )
+          `Warning: Skipping subscription ${subscription.id} because it has an active trial`,
+        ),
       );
       return;
     }
@@ -100,13 +103,13 @@ function transformToImportFormat(stripeData, options = {}) {
     // Skip if subscription has any percentage discounts
     if (
       subscription.discounts?.some(
-        (discount) => discount.coupon && discount.coupon.percent_off
+        (discount) => discount.coupon && discount.coupon.percent_off,
       )
     ) {
       console.warn(
         chalk.yellow(
-          `Warning: Skipping subscription ${subscription.id} because it has a percentage discount`
-        )
+          `Warning: Skipping subscription ${subscription.id} because it has a percentage discount`,
+        ),
       );
       return;
     }
@@ -117,8 +120,8 @@ function transformToImportFormat(stripeData, options = {}) {
       if (!phases || phases.length !== 1) {
         console.warn(
           chalk.yellow(
-            `Warning: Skipping subscription ${subscription.id} because it has a schedule with multiple phases`
-          )
+            `Warning: Skipping subscription ${subscription.id} because it has a schedule with multiple phases`,
+          ),
         );
         return;
       }
@@ -133,8 +136,8 @@ function transformToImportFormat(stripeData, options = {}) {
       } else {
         console.warn(
           chalk.yellow(
-            `Warning: Skipping subscription ${subscription.id} because it has a schedule with a single phase that isn't a cancellation`
-          )
+            `Warning: Skipping subscription ${subscription.id} because it has a schedule with a single phase that isn't a cancellation`,
+          ),
         );
         return;
       }
@@ -146,8 +149,8 @@ function transformToImportFormat(stripeData, options = {}) {
     if (!customer) {
       console.warn(
         chalk.yellow(
-          `Warning: Skipping subscription ${subscription.id} because customer not found`
-        )
+          `Warning: Skipping subscription ${subscription.id} because customer not found`,
+        ),
       );
       return;
     }
@@ -174,8 +177,8 @@ function transformToImportFormat(stripeData, options = {}) {
       if (!startDate || !endDate) {
         console.warn(
           chalk.yellow(
-            `Warning: Skipping subscription ${subscription.id} because of invalid dates. Start date: ${startDate}, End date: ${endDate}`
-          )
+            `Warning: Skipping subscription ${subscription.id} because of invalid dates. Start date: ${startDate}, End date: ${endDate}`,
+          ),
         );
         return;
       }
@@ -221,6 +224,12 @@ function transformToImportFormat(stripeData, options = {}) {
           ? new Date(subscription.trial_start * 1000).toISOString()
           : null,
       };
+
+      // Attach Stripe payment method ID if available
+      if (subscription.default_payment_method) {
+        subscriptionData.stripePaymentMethodId =
+          subscription.default_payment_method;
+      }
 
       // Add tax information if available
       if (customer.tax_ids?.length > 0) {
@@ -302,7 +311,7 @@ const migrateStripeSubscriptions = new Command("subscriptions")
       console.log(chalk.blue("\nFound in Stripe:"));
       console.log(chalk.gray(`- ${stripeData.customers.length} customers`));
       console.log(
-        chalk.gray(`- ${stripeData.subscriptions.length} subscriptions`)
+        chalk.gray(`- ${stripeData.subscriptions.length} subscriptions`),
       );
 
       // Transform data to Bunny format
@@ -311,6 +320,67 @@ const migrateStripeSubscriptions = new Command("subscriptions")
       const bunnyDataPath = path.join(tempDir, "bunny_subscriptions.json");
       await fs.writeFile(bunnyDataPath, JSON.stringify(bunnyData, null, 2));
       spinner.succeed("Data transformed to Bunny format");
+
+      // Initialize destination client early (needed for plugin fetch)
+      const profileConfig = config.get(`profiles.${options.profile}`);
+      if (!profileConfig) {
+        throw new Error(
+          `Profile '${options.profile}' not found in configuration`,
+        );
+      }
+
+      if (
+        !profileConfig.baseUrl ||
+        !profileConfig.clientId ||
+        !profileConfig.clientSecret
+      ) {
+        throw new Error(
+          `Profile '${options.profile}' is missing required configuration (baseUrl, clientId, or clientSecret)`,
+        );
+      }
+
+      const destinationClient = client(
+        profileConfig.baseUrl,
+        profileConfig.clientId,
+        profileConfig.clientSecret,
+      );
+
+      // Ask about payment method migration
+      let migratePaymentMethods = false;
+      let selectedPluginGuid = null;
+
+      const wantPaymentMethods = await confirm({
+        message:
+          "Would you like to also migrate payment method tokens from Stripe?",
+      });
+
+      if (wantPaymentMethods) {
+        spinner = ora("Fetching plugins from Bunny").start();
+        const plugins = await pluginsQuery(destinationClient, {
+          filter:
+            "enabled is true and plugin_definitions.short_name = 'stripe'",
+        });
+        spinner.succeed(`Found ${plugins.length} plugin(s)`);
+
+        if (!plugins || plugins.length === 0) {
+          console.warn(
+            chalk.yellow(
+              "No plugins found. Skipping payment method migration.",
+            ),
+          );
+        } else {
+          const selectedPlugin = await select({
+            message: "Select the payment plugin to use:",
+            choices: plugins.map((plugin) => ({
+              name: `${plugin.name} (${plugin.guid})`,
+              value: plugin,
+            })),
+          });
+
+          selectedPluginGuid = selectedPlugin.guid;
+          migratePaymentMethods = true;
+        }
+      }
 
       // Only show detailed import info in verbose mode
       if (options.verbose) {
@@ -333,47 +403,62 @@ const migrateStripeSubscriptions = new Command("subscriptions")
       // Create a new spinner for the import
       spinner = ora("Importing subscriptions").start();
 
-      // Execute the import using the subscriptionCreate mutation
-      const profileConfig = config.get(`profiles.${options.profile}`);
-      if (!profileConfig) {
-        throw new Error(
-          `Profile '${options.profile}' not found in configuration`
-        );
-      }
-
-      if (
-        !profileConfig.baseUrl ||
-        !profileConfig.clientId ||
-        !profileConfig.clientSecret
-      ) {
-        throw new Error(
-          `Profile '${options.profile}' is missing required configuration (baseUrl, clientId, or clientSecret)`
-        );
-      }
-
-      const destinationClient = client(
-        profileConfig.baseUrl,
-        profileConfig.clientId,
-        profileConfig.clientSecret
-      );
-
       let successCount = 0;
       let errorCount = 0;
+      let paymentMethodSuccessCount = 0;
+      let paymentMethodErrorCount = 0;
 
       for (const subscription of bunnyData) {
         try {
+          const { stripePaymentMethodId, ...subscriptionAttributes } =
+            subscription;
+
           const result = await subscriptionCreate(destinationClient, {
-            attributes: subscription,
+            attributes: subscriptionAttributes,
           });
 
           if (result) {
             successCount++;
+
+            // Create payment method if opted in and stripe has one
+            if (
+              migratePaymentMethods &&
+              stripePaymentMethodId &&
+              result.account?.id
+            ) {
+              try {
+                const pmResult = await paymentMethodCreate(
+                  destinationClient,
+                  result.account.id,
+                  selectedPluginGuid,
+                  stripePaymentMethodId,
+                );
+                if (pmResult) {
+                  paymentMethodSuccessCount++;
+                } else {
+                  paymentMethodErrorCount++;
+                  console.warn(
+                    chalk.yellow(
+                      `Failed to create payment method for account ${subscription.account.name}`,
+                    ),
+                  );
+                }
+              } catch (pmError) {
+                paymentMethodErrorCount++;
+                console.warn(
+                  chalk.yellow(
+                    `Error creating payment method for account ${subscription.account.name}:`,
+                    pmError.message,
+                  ),
+                );
+              }
+            }
           } else {
             errorCount++;
             console.warn(
               chalk.yellow(
-                `Failed to import subscription for account ${subscription.account.name}`
-              )
+                `Failed to import subscription for account ${subscription.account.name}`,
+              ),
             );
           }
         } catch (error) {
@@ -381,40 +466,32 @@ const migrateStripeSubscriptions = new Command("subscriptions")
           console.warn(
             chalk.yellow(
               `Error importing subscription for account ${subscription.account.name}:`,
-              error.message
-            )
+              error.message,
+            ),
           );
         }
       }
 
-      if (errorCount === 0) {
+      const summary = {
+        status: errorCount === 0 ? "success" : "partial",
+        imported: successCount,
+        ...(errorCount > 0 && { errors: errorCount }),
+        ...(migratePaymentMethods && {
+          paymentMethods: {
+            imported: paymentMethodSuccessCount,
+            errors: paymentMethodErrorCount,
+          },
+        }),
+        subscriptions: bunnyData,
+      };
+
+      if (errorCount === 0 && paymentMethodErrorCount === 0) {
         spinner.succeed("Successfully imported subscriptions");
-        console.log(
-          JSON.stringify(
-            {
-              status: "success",
-              imported: successCount,
-              subscriptions: bunnyData,
-            },
-            null,
-            2
-          )
-        );
       } else {
         spinner.warn("Import completed with errors");
-        console.log(
-          JSON.stringify(
-            {
-              status: "partial",
-              imported: successCount,
-              errors: errorCount,
-              subscriptions: bunnyData,
-            },
-            null,
-            2
-          )
-        );
       }
+
+      console.log(JSON.stringify(summary, null, 2));
 
       // Keep the temp files if in verbose mode
       if (options.verbose) {
@@ -423,14 +500,14 @@ const migrateStripeSubscriptions = new Command("subscriptions")
         console.log(
           chalk.yellow(
             "- Stripe data:",
-            path.join(tempDir, "stripe_subscriptions.json")
-          )
+            path.join(tempDir, "stripe_subscriptions.json"),
+          ),
         );
         console.log(
           chalk.yellow(
             "- Bunny data:",
-            path.join(tempDir, "bunny_subscriptions.json")
-          )
+            path.join(tempDir, "bunny_subscriptions.json"),
+          ),
         );
       }
     } catch (error) {
@@ -446,14 +523,14 @@ const migrateStripeSubscriptions = new Command("subscriptions")
         console.log(
           chalk.yellow(
             "- Stripe data:",
-            path.join(tempDir, "stripe_subscriptions.json")
-          )
+            path.join(tempDir, "stripe_subscriptions.json"),
+          ),
         );
         console.log(
           chalk.yellow(
             "- Bunny data:",
-            path.join(tempDir, "bunny_subscriptions.json")
-          )
+            path.join(tempDir, "bunny_subscriptions.json"),
+          ),
         );
 
         if (options.verbose && error.stack) {

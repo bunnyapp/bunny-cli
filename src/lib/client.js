@@ -6,7 +6,7 @@ const client = function (baseUrl, clientId, clientSecret) {
     clientId: clientId,
     clientSecret: clientSecret,
     scope:
-      "standard:read standard:write admin:read admin:write product:read product:write",
+      "standard:read standard:write admin:read admin:write product:read product:write billing:read billing:write",
   });
 };
 

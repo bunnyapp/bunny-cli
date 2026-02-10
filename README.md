@@ -95,6 +95,39 @@ Use the `--verbose` flag for detailed output:
 bunny migrate stripe products --verbose
 ```
 
+### Migrate Subscriptions from Stripe
+
+To migrate subscriptions from Stripe to Bunny:
+
+```bash
+bunny migrate stripe subscriptions
+```
+
+This command will:
+
+- Prompt you for your Stripe secret key (or use a saved one)
+- Fetch all active subscriptions and customers from Stripe
+- Transform the data to Bunny format
+- Ask if you would like to also migrate payment method tokens from Stripe
+- If yes, fetch the available billing plugins from your Bunny instance and let you select which one to use
+- Import the subscriptions (and optionally payment methods) into your configured Bunny instance
+
+#### Payment Method Migration
+
+To migrate payment method tokens, the Stripe integration must be installed and enabled in your Bunny instance. During the migration you will be prompted to select the billing plugin to associate the payment methods with. The Stripe payment method ID from each subscription is used as the token when creating the payment method in Bunny.
+
+You can use the `--profile` option to specify a different profile:
+
+```bash
+bunny migrate stripe subscriptions --profile=alternate
+```
+
+Use the `--verbose` flag for detailed output:
+
+```bash
+bunny migrate stripe subscriptions --verbose
+```
+
 ### Migrate Products from Another Bunny Instance
 
 To migrate a product from one Bunny instance to another:

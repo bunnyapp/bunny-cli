@@ -289,13 +289,24 @@ async function transformToImportFormat(stripeData, destinationClient) {
     is_visible: true,
   });
 
+  // Track plan names to deduplicate
+  const planNameCounts = {};
+
   // Process products into plans
   stripeData.products.forEach((product) => {
     if (!product.active) return;
 
+    let planName = product.name;
+    if (planNameCounts[planName] !== undefined) {
+      planNameCounts[planName]++;
+      planName = `${planName} ${planNameCounts[planName]}`;
+    } else {
+      planNameCounts[planName] = 0;
+    }
+
     const plan = {
       code: product.id,
-      name: product.name,
+      name: planName,
       available: true,
       description: product.description,
       internal_notes: null,

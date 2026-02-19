@@ -13,8 +13,8 @@ const inspectProfile = new Command("inspect")
     if (!profile) {
       console.error(
         chalk.red(
-          `Profile '${options.profile}' not found. Run "bunny configure" to set up a profile.`
-        )
+          `Profile '${options.profile}' not found. Run "bunny configure" to set up a profile.`,
+        ),
       );
       process.exit(1);
     }
@@ -25,12 +25,12 @@ const inspectProfile = new Command("inspect")
     console.log(chalk.gray("Client ID:"), profile.clientId || "Not set");
     console.log(
       chalk.gray("Client Secret:"),
-      profile.clientSecret ? "********" : "Not set"
+      profile.clientSecret || "Not set",
     );
 
     // Show additional stored keys if they exist
     const additionalKeys = Object.keys(profile).filter(
-      (key) => !["baseUrl", "clientId", "clientSecret"].includes(key)
+      (key) => !["baseUrl", "clientId", "clientSecret"].includes(key),
     );
 
     if (additionalKeys.length > 0) {
@@ -41,7 +41,7 @@ const inspectProfile = new Command("inspect")
           chalk.gray(key + ":"),
           typeof value === "string" && value.startsWith("sk_")
             ? `${value.slice(0, 8)}...${value.slice(-3)}`
-            : value
+            : value,
         );
       });
     }

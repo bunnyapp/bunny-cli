@@ -9,6 +9,8 @@ import importer from "../src/commands/import.js";
 import migrate from "../src/commands/migrate.js";
 import configure from "../src/commands/configure.js";
 import profiles from "../src/commands/profiles.js";
+import bootstrap from "../src/commands/bootstrap/index.js";
+import doctor from "../src/commands/doctor.js";
 
 const program = new Command();
 
@@ -22,6 +24,8 @@ program.addCommand(importer);
 program.addCommand(migrate);
 program.addCommand(configure);
 program.addCommand(profiles);
+program.addCommand(bootstrap);
+program.addCommand(doctor);
 
 if (process.argv.length <= 2) {
   const info = chalk.hex("#FF5833");

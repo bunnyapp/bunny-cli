@@ -1,3 +1,5 @@
+import { callLLM } from "../../lib/llm.js";
+
 export async function analyzeWithLLM(provider, apiKey, domain, meta) {
   const contextLines = [
     `Domain: ${domain}`,
@@ -34,31 +36,8 @@ Respond with a JSON object with these exact keys:
 
 If you cannot determine a value, make a reasonable professional default derived from the brand. Return only valid JSON.`;
 
-  if (provider === "Anthropic") {
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const anthropic = new Anthropic({ apiKey });
-    const message = await anthropic.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    });
-    const text = message.content[0].text.trim();
-    return JSON.parse(text);
-  } else {
-    const OpenAI = (await import("openai")).default;
-    const openai = new OpenAI({ apiKey });
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-    });
-    const text = completion.choices[0].message.content.trim();
-    return JSON.parse(text);
-  }
+  const text = await callLLM(provider, apiKey, { systemPrompt, userPrompt, maxTokens: 1024, json: true });
+  return JSON.parse(text);
 }
 
 export async function generateEmailTemplate(provider, apiKey, existingTemplate, logoUrl, brandColor, accentColor, domain) {
@@ -86,26 +65,5 @@ Return only the complete updated HTML template.
 Existing template:
 ${existingTemplate}`;
 
-  if (provider === "Anthropic") {
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const anthropic = new Anthropic({ apiKey });
-    const message = await anthropic.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    });
-    return message.content[0].text.trim();
-  } else {
-    const OpenAI = (await import("openai")).default;
-    const openai = new OpenAI({ apiKey });
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    });
-    return completion.choices[0].message.content.trim();
-  }
+  return callLLM(provider, apiKey, { systemPrompt, userPrompt, maxTokens: 4096 });
 }

@@ -66,6 +66,40 @@ To import MRR from a CSV file:
 bunny import mrr --file=mrr.csv
 ```
 
+## Bootstrap
+
+### AI-Powered Onboarding
+
+To quickly apply branding from a customer's domain to a Bunny entity:
+
+```bash
+bunny bootstrap
+```
+
+This command will:
+
+- Prompt you to select an LLM provider (OpenAI or Anthropic) and API key if not already saved
+- Ask for the customer's domain (e.g. `acme.com`)
+- Fetch the website and use AI to extract branding (logo, brand color, accent color)
+- List available entities in your Bunny instance and let you select one
+- Generate a branded email template using the extracted colors and logo
+- Download the logo and upload it as nav and document images
+- Update the entity's brand color, accent color, and email template
+
+LLM credentials are saved to your profile after the first run.
+
+Use the `--profile` option to specify a different profile:
+
+```bash
+bunny bootstrap --profile=alternate
+```
+
+Use the `--verbose` flag for detailed error output:
+
+```bash
+bunny bootstrap --verbose
+```
+
 ## Migration
 
 ### Migrate Products from Stripe

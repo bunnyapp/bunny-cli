@@ -49,7 +49,10 @@ async function fetchAllSubscriptions(stripe) {
       trial_end: subscription.trial_end,
       discounts: subscription.discounts,
       schedule: subscription.schedule,
-      default_payment_method: subscription.default_payment_method,
+      default_payment_method:
+        subscription.default_payment_method ||
+        subscription.customer.invoice_settings?.default_payment_method ||
+        subscription.customer.default_source,
     });
   }
   return subscriptions;

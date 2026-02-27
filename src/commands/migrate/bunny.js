@@ -41,6 +41,7 @@ function transformToImportFormat(productData, destinationClient) {
   // Transform features
   if (productData.features && Array.isArray(productData.features)) {
     transformedProduct.features = productData.features.map((feature) => ({
+      id: feature.id,
       name: feature.name,
       code: feature.code,
       description: feature.description || null,
@@ -89,6 +90,7 @@ function transformToImportFormat(productData, destinationClient) {
             currency_id: priceList.currencyId,
             trial_allowed: priceList.trialAllowed || false,
             trial_length_days: priceList.trialLengthDays || null,
+            trial_expiration_action: priceList.trialExpirationAction || null,
             sku: priceList.sku || null,
             price_list_charges: [],
           };
@@ -163,7 +165,7 @@ function transformToImportFormat(productData, destinationClient) {
                 }
 
                 return transformedCharge;
-              }
+              },
             );
           }
 
@@ -207,7 +209,7 @@ const migrateBunny = new Command("bunny")
       const sourceClient = client(
         sourceBaseUrl,
         sourceClientId,
-        sourceClientSecret
+        sourceClientSecret,
       );
 
       // Step 2: List products from source
@@ -265,7 +267,7 @@ const migrateBunny = new Command("bunny")
 
       // Step 5: Fetch full product data from source
       spinner = ora(
-        `Fetching product '${selectedProduct.name}' from source instance`
+        `Fetching product '${selectedProduct.name}' from source instance`,
       ).start();
       const productData = await productQuery(sourceClient, {
         id: selectedProduct.id,

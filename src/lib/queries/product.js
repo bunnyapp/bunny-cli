@@ -70,6 +70,7 @@ const query = `query product ($id: ID, $code: String) {
             sku
             trialAllowed
             trialLengthDays
+            trialExpirationAction
             updatedAt
             charges {
                 accountingCode

@@ -168,13 +168,19 @@ function transformToImportFormat(stripeData, options = {}) {
         ? new Date(item.current_period_start * 1000).toISOString()
         : null;
 
+      const subtractOneDay = (ms) => {
+        const d = new Date(ms);
+        d.setUTCDate(d.getUTCDate() - 1);
+        return d.toISOString();
+      };
+
       let endDate = null;
       if (subscription.end_date) {
-        endDate = new Date(subscription.end_date * 1000).toISOString();
+        endDate = subtractOneDay(subscription.end_date * 1000);
       } else if (subscription.cancel_at) {
-        endDate = new Date(subscription.cancel_at * 1000).toISOString();
+        endDate = subtractOneDay(subscription.cancel_at * 1000);
       } else if (item.current_period_end) {
-        endDate = new Date(item.current_period_end * 1000).toISOString();
+        endDate = subtractOneDay(item.current_period_end * 1000);
       }
 
       if (!startDate || !endDate) {

@@ -37,40 +37,47 @@ const mutation = `mutation subscriptionCreate ($attributes: SubscriptionAttribut
       }
     }`;
 
-const subscriptionCreate = async (client, attributes) => {
+const subscriptionCreate = async (client, attributes, verbose = false) => {
   try {
     const res = await client.query(mutation, attributes);
     const subscriptionCreate = res?.data?.subscriptionCreate;
 
     if (res?.errors) {
-      throw new Error(res.errors.map((e) => e.message).join());
+      throw new Error(res.errors.map((e) => e.message).join(", "));
     }
 
-    if (subscriptionCreate?.errors) {
-      if (Array.isArray(subscriptionCreate.errors)) {
-        throw new Error(subscriptionCreate.errors.join());
-      } else {
-        throw new Error(subscriptionCreate.errors);
-      }
+    const errors = subscriptionCreate?.errors;
+    if (errors && (!Array.isArray(errors) || errors.length > 0)) {
+      throw new Error(
+        Array.isArray(errors) ? errors.join(", ") : JSON.stringify(errors)
+      );
     }
 
     return subscriptionCreate?.subscription;
   } catch (error) {
     console.log(chalk.red("Subscription Create Error"));
-    if (error.status && error.status == 500) {
-      console.log(chalk.red("Internal Server Error", error.exception));
-    }
-    if (error) {
-      console.log(chalk.red(error));
-      console.log(chalk.red(error.message));
-    }
-    console.log(JSON.stringify(attributes, null, 2));
+
+    // Surface a useful message regardless of what was thrown.
+    const message =
+      error?.message ||
+      (typeof error === "object" ? JSON.stringify(error) : String(error));
+    console.log(chalk.red(message));
+
     console.log(
       chalk.red(
         "Failed import for account:",
-        attributes.attributes.account?.name || attributes.attributes.account_id
+        attributes.attributes.account?.name || attributes.attributes.accountId
       )
     );
+
+    // Only dump the full payload and raw server response in verbose mode.
+    if (verbose) {
+      const serverData = error?.response?.data;
+      if (serverData) {
+        console.log(chalk.gray(JSON.stringify(serverData, null, 2)));
+      }
+      console.log(chalk.gray(JSON.stringify(attributes, null, 2)));
+    }
   }
 };
 

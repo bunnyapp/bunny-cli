@@ -7,7 +7,7 @@ import ora from "ora";
 import Conf from "conf";
 import ProgressBar from "ora-progress-bar";
 import chalk from "chalk";
-import { parseISO, format } from "date-fns";
+import { parseISO, parse, format, isValid } from "date-fns";
 import client from "../../lib/client.js";
 import subscriptionCreate from "../../lib/mutations/subscription-create.js";
 import { ro } from "date-fns/locale";
@@ -32,14 +32,58 @@ const countRows = async (filePath) => {
   });
 };
 
-function parseDateSafely(dateString) {
+// Convert a user-friendly date format (e.g. "DD/MM/YYYY") into the tokens
+// date-fns expects ("dd/MM/yyyy"). Month tokens (M) are left untouched.
+function normalizeDateFormat(userFormat) {
+  return userFormat.replace(/D/g, "d").replace(/Y/g, "y");
+}
+
+function parseDateSafely(dateString, dateFormat) {
   if (!dateString) return null;
-  try {
-    return parseISO(dateString);
-  } catch {
-    // If parsing fails, try adding time component
-    return parseISO(dateString + "T00:00:00");
+  const trimmed = String(dateString).trim();
+  if (!trimmed) return null;
+
+  // If a custom date format was supplied, try that first.
+  if (dateFormat) {
+    const parsed = parse(trimmed, dateFormat, new Date());
+    if (isValid(parsed)) return parsed;
   }
+
+  // Fall back to ISO parsing.
+  let parsed = parseISO(trimmed);
+  if (isValid(parsed)) return parsed;
+
+  // If parsing fails, try adding a time component.
+  parsed = parseISO(trimmed + "T00:00:00");
+  return isValid(parsed) ? parsed : null;
+}
+
+// Wrap a CSV row so that column lookups (row["Start Date"]) are
+// case-insensitive. Import files come from many sources with inconsistent
+// header casing (e.g. "Start date" vs "Start Date"), so this avoids silent
+// undefined lookups. Original keys are preserved for Object.keys / writes.
+function caseInsensitiveRow(row) {
+  const lookup = {};
+  for (const key of Object.keys(row)) {
+    lookup[key.toLowerCase()] = key;
+  }
+  return new Proxy(row, {
+    get(target, prop) {
+      if (typeof prop === "string" && !(prop in target)) {
+        const actual = lookup[prop.toLowerCase()];
+        if (actual !== undefined) return target[actual];
+      }
+      return target[prop];
+    },
+  });
+}
+
+// Key used to dedupe accounts within a single import so that multiple
+// subscriptions for the same account reuse the account created on the first
+// row. Prefer the source "Account ID" but fall back to "Account Code" when
+// it's blank. Returns "" when neither is present (never dedupe on an empty key).
+function accountKeyFor(row) {
+  return row["Account ID"] || row["Account Code"] || "";
 }
 
 async function getTierStartValue(row, chargeIndex, tierIndex) {
@@ -64,9 +108,11 @@ async function getTierStartValue(row, chargeIndex, tierIndex) {
   return null;
 }
 
-async function processRow(row, accountMap, client) {
-  let startDate = parseDateSafely(row["Start Date"]);
-  let endDate = parseDateSafely(row["End Date"]);
+async function processRow(row, accountMap, client, dateFormat, verbose) {
+  row = caseInsensitiveRow(row);
+
+  let startDate = parseDateSafely(row["Start Date"], dateFormat);
+  let endDate = parseDateSafely(row["End Date"], dateFormat);
   let invalidSubscriptionAttributes = false;
 
   if (!startDate || !endDate) {
@@ -79,17 +125,24 @@ async function processRow(row, accountMap, client) {
     attributes: {
       priceListCode: row["Price List Code"],
       trial: false,
-      evergreen: row["Evergreen"].toLowerCase() === "true",
+      evergreen: row["Evergreen"]
+        ? row["Evergreen"].toLowerCase() === "true"
+        : true,
       startDate: format(startDate, "yyyy-MM-dd"),
       endDate: format(endDate, "yyyy-MM-dd"),
-      tenant: {
-        code: row["Tenant Code"],
-        name: row["Tenant Name"],
-      },
       priceListCharges: [],
       discounts: [],
     },
   };
+
+  // Only send a tenant when a code is provided. An empty tenant
+  // ({ code: "", name: "" }) is rejected by the API.
+  if (row["Tenant Code"]) {
+    variables.attributes.tenant = {
+      code: row["Tenant Code"],
+      name: row["Tenant Name"] || row["Tenant Code"],
+    };
+  }
 
   if (endDate < startDate) {
     invalidSubscriptionAttributes = true;
@@ -98,7 +151,7 @@ async function processRow(row, accountMap, client) {
 
   if (row["Trial Start Date"]) {
     if (startDate > new Date()) {
-      let trialStartDate = parseDateSafely(row["Trial Start Date"]);
+      let trialStartDate = parseDateSafely(row["Trial Start Date"], dateFormat);
       if (trialStartDate) {
         // Set trial flag and start date
         variables.attributes.trial = true;
@@ -111,8 +164,9 @@ async function processRow(row, accountMap, client) {
   }
 
   // Check if account exists already
-  if (accountMap[row["Account ID"]]) {
-    variables.attributes["accountId"] = accountMap[row["Account ID"]];
+  const accountKey = accountKeyFor(row);
+  if (accountKey && accountMap[accountKey]) {
+    variables.attributes["accountId"] = accountMap[accountKey];
   } else {
     variables.attributes["account"] = {
       code: row["Account Code"],
@@ -126,10 +180,16 @@ async function processRow(row, accountMap, client) {
       billingContact: {
         firstName: row["Billing Contact First Name"],
         lastName: row["Billing Contact Last Name"],
-        email: row["Billing Contact Email"].trim(),
+        email: (row["Billing Contact Email"] || "").trim(),
       },
-      netPaymentDays: parseInt(row["Net Payment Days"]),
     };
+
+    // Default netPaymentDays to 0 when it doesn't parse to a number,
+    // otherwise it becomes null in the payload and the API rejects it.
+    const netPaymentDays = parseInt(row["Net Payment Days"], 10);
+    variables.attributes.account.netPaymentDays = isNaN(netPaymentDays)
+      ? 0
+      : netPaymentDays;
 
     if (row["Emails Enabled"]) {
       variables.attributes.account.emailsEnabled =
@@ -165,14 +225,16 @@ async function processRow(row, accountMap, client) {
 
     if (row[`Discount ${discountIndex} Start Date`]) {
       let discountStartDate = parseDateSafely(
-        row[`Discount ${discountIndex} Start Date`]
+        row[`Discount ${discountIndex} Start Date`],
+        dateFormat
       );
       discount.startDate = format(discountStartDate, "yyyy-MM-dd");
     }
 
     if (row[`Discount ${discountIndex} End Date`]) {
       let discountEndDate = parseDateSafely(
-        row[`Discount ${discountIndex} End Date`]
+        row[`Discount ${discountIndex} End Date`],
+        dateFormat
       );
       discount.endDate = format(discountEndDate, "yyyy-MM-dd");
     }
@@ -210,11 +272,17 @@ async function processRow(row, accountMap, client) {
       // If the same charge code is used multiple times then we need to
       // include the charge start and end dates
       charge.startDate = format(
-        parseDateSafely(row[`Charge ${chargeIndex} Effective Start Date`]),
+        parseDateSafely(
+          row[`Charge ${chargeIndex} Effective Start Date`],
+          dateFormat
+        ),
         "yyyy-MM-dd"
       );
       charge.endDate = format(
-        parseDateSafely(row[`Charge ${chargeIndex} Effective End Date`]),
+        parseDateSafely(
+          row[`Charge ${chargeIndex} Effective End Date`],
+          dateFormat
+        ),
         "yyyy-MM-dd"
       );
     }
@@ -299,12 +367,14 @@ async function processRow(row, accountMap, client) {
   }
 
   // Log the variables for debugging
-  console.log(JSON.stringify(variables, null, 2));
+  if (verbose) {
+    console.log(JSON.stringify(variables, null, 2));
+  }
 
-  return await subscriptionCreate(client, variables);
+  return await subscriptionCreate(client, variables, verbose);
 }
 
-async function processRows(client, filePath, rowCount) {
+async function processRows(client, filePath, rowCount, dateFormat, verbose) {
   const timestamp = new Date().toISOString().replace(/[-:.]/g, "");
   const outputFilePath = `subscriptions_output_${timestamp}.csv`;
   const parser = fs.createReadStream(filePath).pipe(csv());
@@ -334,10 +404,19 @@ async function processRows(client, filePath, rowCount) {
       });
     }
 
-    let subscription = await processRow(row, accountMap, client);
+    let subscription = await processRow(
+      row,
+      accountMap,
+      client,
+      dateFormat,
+      verbose
+    );
 
     if (subscription) {
-      accountMap[row["Account ID"]] = subscription.account.id;
+      const accountKey = accountKeyFor(row);
+      if (accountKey) {
+        accountMap[accountKey] = subscription.account.id;
+      }
       row["Bunny Account ID"] = subscription.account.id;
       row["Bunny Subscription ID"] = subscription.id;
       row["Import Status"] = "Success";
@@ -368,6 +447,11 @@ const importSubscriptions = new Command("subscriptions")
   .description("Import subscriptions in bulk from a json file")
   .option("-f, --file <path>", "Import file path")
   .option("-p, --profile <name>", "Profile name", "default")
+  .option(
+    "-d, --date-format <format>",
+    'Date format of the dates in the import file, e.g. "DD/MM/YYYY". Defaults to ISO (YYYY-MM-DD).'
+  )
+  .option("-v, --verbose", "Show verbose output")
   .action(async (options) => {
     const profile = config.get(`profiles.${options.profile}`);
     if (!profile) {
@@ -394,9 +478,19 @@ const importSubscriptions = new Command("subscriptions")
       return;
     }
 
+    const dateFormat = options.dateFormat
+      ? normalizeDateFormat(options.dateFormat)
+      : null;
+
     const rowCount = await countRows(options.file);
 
-    await processRows(destinationClient, options.file, rowCount);
+    await processRows(
+      destinationClient,
+      options.file,
+      rowCount,
+      dateFormat,
+      options.verbose
+    );
   });
 
 export default importSubscriptions;
